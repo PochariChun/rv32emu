@@ -7,6 +7,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <stdbool.h>
+#include <sys/stat.h>
 
 #if defined(_WIN32)
 #include <windows.h>
@@ -72,40 +73,88 @@ static void insn_hist_incr(const rv_insn_t *ir)
     rv_insn_stats[ir->opcode].freq++;
 }
 
+#define DEFAULT_OUTPUT_DIR "build/pyvisual"
+
+static void ensure_output_dir_exists(void) {
+#if defined(_WIN32)
+    mkdir(DEFAULT_OUTPUT_DIR);
+#else
+    mkdir(DEFAULT_OUTPUT_DIR, 0755);
+#endif
+}
+
 static void print_usage(const char *filename)
 {
     fprintf(stderr,
-            "rv_pyvisual loads an ELF file to execute and generate visualization.\n"
-            "Usage: %s [option] [elf_file_path] [output_json_path]\n"
-            "available options: -a, generate the histogram in "
-            "ascending order(default is on descending order)\n",
+            "rv_pyvisual - RISC-V instruction frequency analyzer\n"
+            "Usage: %s [-h] [-a] [-t TYPE] -i INPUT [-o OUTPUT]\n"
+            "Options:\n"
+            "  -h        Show this help message\n"
+            "  -a        Generate histogram in ascending order (default: descending)\n"
+            "  -i INPUT  Input ELF file path\n"
+            "  -o OUTPUT Output JSON file path (default: build/pyvisual/output.json)\n",
             filename);
 }
 
 static bool parse_args(int argc, const char *args[])
 {
     bool ret = true;
-    for (int i = 1; (i < argc) && ret; i++) {
+    const char *input_file = NULL;
+    const char *output_file = NULL;
+    static char default_output[256];
+
+    for (int i = 1; i < argc; i++) {
         const char *arg = args[i];
         if (arg[0] == '-') {
-            if (!strcmp(arg, "-a")) {
-                ascending_order = true;
-                continue;
+            switch (arg[1]) {
+                case 'h':
+                    print_usage(args[0]);
+                    exit(0);
+                case 'a':
+                    ascending_order = true;
+                    break;
+                case 'i':
+                    if (i + 1 < argc) {
+                        input_file = args[++i];
+                    } else {
+                        ret = false;
+                    }
+                    break;
+                case 'o':
+                    if (i + 1 < argc) {
+                        output_file = args[++i];
+                    } else {
+                        ret = false;
+                    }
+                    break;
+                default:
+                    ret = false;
+                    break;
             }
+        } else {
             ret = false;
-        } else if (!elf_prog) {
-            elf_prog = arg;
-        } else if (!out_json) {
-            out_json = arg;
         }
     }
 
-    return ret;
+    if (ret && input_file) {
+        elf_prog = input_file;
+        if (!output_file) {
+            // 如果没有指定输出文件，使用默认路径
+            ensure_output_dir_exists();
+            snprintf(default_output, sizeof(default_output), 
+                    "%s/output.json", DEFAULT_OUTPUT_DIR);
+            out_json = default_output;
+        } else {
+            out_json = output_file;
+        }
+        return true;
+    }
+    return false;
 }
 
 int main(int argc, const char *args[])
 {
-    if (!parse_args(argc, args) || !elf_prog || !out_json) {
+    if (!parse_args(argc, args)) {
         print_usage(args[0]);
         return 1;
     }
@@ -171,10 +220,11 @@ int main(int argc, const char *args[])
 
     // 打印提示信息
     printf("Statistics saved to %s\n", out_json);
-    printf("To generate visualization, run:\n");
-    char cmd[1024];
-    snprintf(cmd, sizeof(cmd), "python3 -m tools.pyvisual.run_analysis -i %s", out_json);
-    system(cmd);
+    printf("To generate visualization:\n");
+    printf("1. Install required Python packages:\n");
+    printf("   pip3 install -r tools/pyvisual/requirements.txt\n\n");
+    printf("2. Run the visualization script:\n");
+    printf("   python3 -m tools.pyvisual.run_analysis -i %s\n", out_json);
 
     elf_delete(e);
     return 0;
