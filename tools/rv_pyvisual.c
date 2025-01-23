@@ -26,6 +26,7 @@ typedef void (*hist_record_handler)(const rv_insn_t *);
 static bool ascending_order = false;
 static const char *elf_prog = NULL;
 static const char *out_json = NULL;
+static const char *highlight_groups = NULL;
 
 typedef struct {
     char insn_reg[16]; /* insn or reg   */
@@ -44,7 +45,6 @@ static rv_hist_t rv_insn_stats[] = {
 };
 /* clang-format on */
 
-// 将统计数据保存为 JSON 格式
 static void save_json_stats(const rv_hist_t *stats, size_t stats_size, const char *filename)
 {
     FILE *f = fopen(filename, "w");
@@ -54,6 +54,11 @@ static void save_json_stats(const rv_hist_t *stats, size_t stats_size, const cha
     }
 
     fprintf(f, "{\n");
+    
+    if (highlight_groups) {
+        fprintf(f, "  \"_highlight_groups\": \"%s\",\n", highlight_groups);
+    }
+    
     for (size_t i = 0; i < stats_size; i++) {
         fprintf(f, "  \"%s\": {\"count\": %zu}", stats[i].insn_reg, stats[i].freq);
         if (i < stats_size - 1)
@@ -87,12 +92,15 @@ static void print_usage(const char *filename)
 {
     fprintf(stderr,
             "rv_pyvisual - RISC-V instruction frequency analyzer\n"
-            "Usage: %s [-h] [-a] [-t TYPE] -i INPUT [-o OUTPUT]\n"
+            "Usage: %s [-h] [-a] [-t TYPE] -i INPUT [-o OUTPUT] [-l HIGHLIGHT]\n"
             "Options:\n"
             "  -h        Show this help message\n"
             "  -a        Generate histogram in ascending order (default: descending)\n"
             "  -i INPUT  Input ELF file path\n"
-            "  -o OUTPUT Output JSON file path (default: build/pyvisual/output.json)\n",
+            "  -o OUTPUT Output JSON file path (default: build/pyvisual/output.json)\n"
+            "  -l HL     Highlight instruction groups (e.g., \"lw,lh,lb sw,sh,sb jal,jalr\")\n"
+            "            Instructions in same group separated by comma\n"
+            "            Different groups separated by space\n",
             filename);
 }
 
@@ -127,6 +135,13 @@ static bool parse_args(int argc, const char *args[])
                         ret = false;
                     }
                     break;
+                case 'l':
+                    if (i + 1 < argc) {
+                        highlight_groups = args[++i];
+                    } else {
+                        ret = false;
+                    }
+                    break;
                 default:
                     ret = false;
                     break;
@@ -139,7 +154,6 @@ static bool parse_args(int argc, const char *args[])
     if (ret && input_file) {
         elf_prog = input_file;
         if (!output_file) {
-            // 如果没有指定输出文件，使用默认路径
             ensure_output_dir_exists();
             snprintf(default_output, sizeof(default_output), 
                     "%s/output.json", DEFAULT_OUTPUT_DIR);
@@ -215,10 +229,8 @@ int main(int argc, const char *args[])
         }
     }
 
-    // 保存统计数据为 JSON
     save_json_stats(rv_insn_stats, N_RV_INSNS + 1, out_json);
 
-    // 打印提示信息
     printf("Statistics saved to %s\n", out_json);
     printf("To generate visualization:\n");
     printf("1. Install required Python packages:\n");
