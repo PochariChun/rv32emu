@@ -32,3 +32,4 @@ tests/scimark2/
 __pycache__/
 src/rv32_jit.c
 src/minimal_dtb.h
+tools/pyvisual/run_analysis_old.py
